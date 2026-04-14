@@ -4,7 +4,7 @@ import logging
 import random
 import re
 from typing import Any, Dict
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
 import aiohttp
 from aiohttp import ClientSession, ClientTimeout, TCPConnector
@@ -238,16 +238,20 @@ class VixSrcExtractor:
             )
 
             if token_match and expires_match:
-                final_url = (
-                    f"{playlist_url}?token={token_match.group(1)}"
-                    f"&expires={expires_match.group(1)}"
+                parsed_playlist_url = urlparse(playlist_url)
+                query_params = parse_qsl(parsed_playlist_url.query, keep_blank_values=True)
+                query_params.extend(
+                    [
+                        ("token", token_match.group(1)),
+                        ("expires", expires_match.group(1)),
+                    ]
                 )
                 if "window.canPlayFHD = true" in script_content or "canPlayFHD" in script_content:
-                    final_url += "&h=1"
-                final_url += "&lang=en"
+                    query_params.append(("h", "1"))
+                query_params.append(("lang", "en"))
                 if asn_match and asn_match.group(1):
-                    final_url += f"&asn={asn_match.group(1)}"
-                return final_url
+                    query_params.append(("asn", asn_match.group(1)))
+                return urlunparse(parsed_playlist_url._replace(query=urlencode(query_params)))
 
         token_match = re.search(r"['\"]token['\"]\s*:\s*['\"](\w+)['\"]", script_content)
         expires_match = re.search(r"['\"]expires['\"]\s*:\s*['\"](\d+)['\"]", script_content)
@@ -265,20 +269,24 @@ class VixSrcExtractor:
             raise ExtractorError("Missing mandatory parameters in JS script (token/expires/url)")
 
         server_url = server_url_match.group(1).replace("\\/", "/")
-        if "?b=1" in server_url:
-            final_url = f"{server_url}&token={token_match.group(1)}&expires={expires_match.group(1)}"
-        else:
-            final_url = f"{server_url}?token={token_match.group(1)}&expires={expires_match.group(1)}"
+        parsed_server_url = urlparse(server_url)
+        query_params = parse_qsl(parsed_server_url.query, keep_blank_values=True)
+        query_params.extend(
+            [
+                ("token", token_match.group(1)),
+                ("expires", expires_match.group(1)),
+            ]
+        )
 
         if "window.canPlayFHD = true" in script_content or "canPlayFHD" in script_content:
-            final_url += "&h=1"
+            query_params.append(("h", "1"))
 
-        final_url += "&lang=en"
+        query_params.append(("lang", "en"))
         asn_match = re.search(r"['\"]asn['\"]\s*:\s*['\"]([^'\"]*)['\"]", script_content)
         if asn_match and asn_match.group(1):
-            final_url += f"&asn={asn_match.group(1)}"
+            query_params.append(("asn", asn_match.group(1)))
 
-        return final_url
+        return urlunparse(parsed_server_url._replace(query=urlencode(query_params)))
 
     async def version(self, site_url: str) -> str:
         """Ottiene la versione del sito VixSrc parent."""
